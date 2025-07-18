@@ -6,6 +6,7 @@ import '../config/app_config.dart';
 import '../models/blog_post_model.dart';
 import '../services/openai_service.dart';
 import '../services/wordpress_service.dart';
+import '../services/translation_service.dart'; // MỚI: Dùng service dịch miễn phí
 
 // Keys for SharedPreferences
 const String _kFavoriteItemsKey = "favoriteItems";
@@ -15,20 +16,27 @@ const String _kCreditsBalanceKey = "creditsBalance";
 class DataManager extends ChangeNotifier {
   final WordpressService _wordpressService = WordpressService();
   final OpenAiService _openAiService = OpenAiService();
+  final TranslationService _translationService = TranslationService(); // MỚI: Khởi tạo service miễn phí
 
   // --- Trạng thái ---
   bool _isLoading = false, _isSearching = false, _isLoadingFavorites = false, _isSummarizing = false;
+  bool _isTranslating = false;
   List<BlogPostModel> _homePosts = [], _searchResults = [], _favoritePosts = [];
+  List<BlogPostModel> _trendingPosts = [];
+  List<BlogPostModel> _catalogPosts = [];
   CustomTabBarItem _selectedTab = CustomTabBarItem.discover;
   List<String> _favoritePostIds = [];
   bool _isPremiumUser = false;
   int _creditsBalance = AppConfig.defaultCreditsAmount;
   final Map<int, String> _summaries = {};
+  final Map<int, String> _translations = {};
   String? _errorMessage;
 
   // --- Getters ---
   bool get isLoading => _isLoading;
   List<BlogPostModel> get homePosts => _homePosts;
+  List<BlogPostModel> get trendingPosts => _trendingPosts;
+  List<BlogPostModel> get catalogPosts => _catalogPosts;
   CustomTabBarItem get selectedTab => _selectedTab;
   bool get isSearching => _isSearching;
   List<BlogPostModel> get searchResults => _searchResults;
@@ -38,7 +46,9 @@ class DataManager extends ChangeNotifier {
   bool get isPremiumUser => _isPremiumUser;
   int get creditsBalance => _creditsBalance;
   bool get isSummarizing => _isSummarizing;
+  bool get isTranslating => _isTranslating;
   Map<int, String> get summaries => _summaries;
+  Map<int, String> get translations => _translations;
   String? get errorMessage => _errorMessage;
 
   DataManager() {
@@ -47,7 +57,9 @@ class DataManager extends ChangeNotifier {
 
   void _loadInitialData() async {
     await _loadPersistedData();
-    fetchHomePosts();
+    await fetchHomePosts();
+    await fetchTrendingPosts();
+    await fetchCatalogPosts();
   }
 
   Future<void> _loadPersistedData() async {
@@ -98,6 +110,20 @@ class DataManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> fetchTrendingPosts() async {
+    if (_homePosts.isNotEmpty) {
+      _trendingPosts = _homePosts.reversed.toList();
+    }
+    notifyListeners();
+  }
+
+  Future<void> fetchCatalogPosts() async {
+    if (_homePosts.isNotEmpty) {
+      _catalogPosts = _homePosts;
+    }
+    notifyListeners();
+  }
+
   Future<void> fetchFavoritePosts() async {
     if (_favoritePostIds.isEmpty) {
       _favoritePosts = [];
@@ -137,6 +163,25 @@ class DataManager extends ChangeNotifier {
       throw Exception("Failed to summarize. Please try again.");
     } finally {
       _isSummarizing = false;
+      notifyListeners();
+    }
+  }
+
+  // HÀM DỊCH ĐÃ ĐƯỢC THAY THẾ
+  Future<void> translatePost(BlogPostModel post) async {
+    _isTranslating = true;
+    notifyListeners();
+
+    try {
+      final contentToTranslate = post.content.rendered.replaceAll(RegExp(r'<[^>]*>'), '');
+      // Gọi đến service dịch miễn phí mới
+      final translation = await _translationService.translateText(contentToTranslate);
+      _translations[post.id] = translation;
+      // KHÔNG CẦN TRỪ CREDIT
+    } catch (e) {
+      throw Exception("Failed to translate. Please try again.");
+    } finally {
+      _isTranslating = false;
       notifyListeners();
     }
   }
